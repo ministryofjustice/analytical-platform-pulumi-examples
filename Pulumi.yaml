@@ -1,0 +1,3 @@
+name: analytical-platform-step-functions-example
+runtime: python
+description: An example deployment of AWS Step Functions
