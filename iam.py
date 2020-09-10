@@ -37,7 +37,7 @@ lambdaRole = aws.iam.Role(
 lambdaRolePolicyDocument = aws.iam.get_policy_document(
     statements=[
         aws.iam.GetPolicyDocumentStatementArgs(
-            actions=["athena:*", "logs:*"], resources=["*"]
+            actions=["athena:*", "glue:*", "s3:*", "logs:*"], resources=["*"]
         )
     ]
 )
