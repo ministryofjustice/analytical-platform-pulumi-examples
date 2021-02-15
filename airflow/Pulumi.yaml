@@ -1,0 +1,4 @@
+name: airflow
+runtime: python
+description:
+  Creates a basic deployment of AWS Managed Workflows for Apache Airflow
