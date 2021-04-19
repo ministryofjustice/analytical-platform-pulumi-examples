@@ -1,34 +1,23 @@
-from dataengineeringutils3.pulumi import Tagger
+import pulumi_aws as aws
+import pulumi_eks as eks
+import pulumi_kubernetes as k8s
+from data_engineering_pulumi_components.utils import Tagger
 from pulumi import Output, ResourceOptions, export
-import pulumi_aws.iam as iam
-from pulumi_eks import Cluster, RoleMappingArgs
-from pulumi_kubernetes.core.v1 import Namespace, ServiceAccount
-from pulumi_kubernetes.meta.v1 import ObjectMetaArgs
-from pulumi_kubernetes.rbac.v1 import (
-    PolicyRuleArgs,
-    Role,
-    RoleBinding,
-    RoleRefArgs,
-    SubjectArgs,
-)
 
 from iam import executionRole
 from vpc import privateSubnet1, privateSubnet2, publicSubnet1, publicSubnet2, vpc
 
 tagger = Tagger(environment_name="dev")
 
-cluster = Cluster(
+cluster = eks.Cluster(
     resource_name="airflow",
     create_oidc_provider=True,
-    desired_capacity=1,
-    instance_type="t3a.nano",
+    fargate=True,
     name="airflow",
-    min_size=1,
-    max_size=4,
     private_subnet_ids=[privateSubnet1.id, privateSubnet2.id],
     public_subnet_ids=[publicSubnet1.id, publicSubnet2.id],
     role_mappings=[
-        RoleMappingArgs(
+        eks.RoleMappingArgs(
             groups=["system:masters"],
             role_arn=executionRole.arn,
             username="mwaa-service",
@@ -36,21 +25,24 @@ cluster = Cluster(
     ],
     version="1.19",
     vpc_id=vpc.id,
+    tags=tagger.create_tags(name="airflow"),
 )
 
 export("kubeconfig", cluster.kubeconfig)
 
-namespace = Namespace(
+airflowNamespace = k8s.core.v1.Namespace(
     resource_name="airflow",
-    metadata=ObjectMetaArgs(name="airflow"),
+    metadata=k8s.meta.v1.ObjectMetaArgs(name="airflow"),
     opts=ResourceOptions(provider=cluster.provider),
 )
 
-role = Role(
+role = k8s.rbac.v1.Role(
     resource_name="airflow",
-    metadata=ObjectMetaArgs(name="mwaa-role", namespace=namespace.metadata.name),
+    metadata=k8s.meta.v1.ObjectMetaArgs(
+        name="mwaa-role", namespace=airflowNamespace.metadata.name
+    ),
     rules=[
-        PolicyRuleArgs(
+        k8s.rbac.v1.PolicyRuleArgs(
             api_groups=["", "apps", "batch", "extensions"],
             resources=[
                 "jobs",
@@ -67,13 +59,13 @@ role = Role(
     ],
 )
 
-roleBinding = RoleBinding(
+roleBinding = k8s.rbac.v1.RoleBinding(
     resource_name="airflow",
-    metadata=ObjectMetaArgs(
-        name="mwaa-role-binding", namespace=namespace.metadata.name
+    metadata=k8s.meta.v1.ObjectMetaArgs(
+        name="mwaa-role-binding", namespace=airflowNamespace.metadata.name
     ),
-    subjects=[SubjectArgs(kind="User", name="mwaa-service")],
-    role_ref=RoleRefArgs(
+    subjects=[k8s.rbac.v1.SubjectArgs(kind="User", name="mwaa-service")],
+    role_ref=k8s.rbac.v1.RoleRefArgs(
         api_group="rbac.authorization.k8s.io", kind="Role", name="mwaa-role"
     ),
 )
@@ -83,19 +75,19 @@ service_account_name = "mwaa-service-account"
 
 def get_assume_role_policy(args):
     url, arn, namespace = args
-    return iam.get_policy_document(
+    return aws.iam.get_policy_document(
         statements=[
-            iam.GetPolicyDocumentStatementArgs(
+            aws.iam.GetPolicyDocumentStatementArgs(
                 effect="Allow",
                 actions=["sts:AssumeRoleWithWebIdentity"],
                 principals=[
-                    iam.GetPolicyDocumentStatementPrincipalArgs(
+                    aws.iam.GetPolicyDocumentStatementPrincipalArgs(
                         type="Federated",
                         identifiers=[arn],
                     )
                 ],
                 conditions=[
-                    iam.GetPolicyDocumentStatementConditionArgs(
+                    aws.iam.GetPolicyDocumentStatementConditionArgs(
                         test="StringEquals",
                         values=[
                             f"system:serviceaccount:{namespace}"
@@ -111,32 +103,45 @@ def get_assume_role_policy(args):
 
 oidc_provider = cluster.core.oidc_provider
 
-baseContainerRole = iam.Role(
+baseContainerRole = aws.iam.Role(
     resource_name="base-container-role",
     assume_role_policy=Output.all(
-        oidc_provider.url, oidc_provider.arn, namespace.metadata.name
+        oidc_provider.url, oidc_provider.arn, airflowNamespace.metadata.name
     ).apply(get_assume_role_policy),
     description="Base role for Airflow container tasks",
     name="AmazonMWAABaseContainerRole",
     tags=tagger.create_tags("AmazonMWAABaseContainerRole"),
 )
 
-serviceAccount = ServiceAccount(
+serviceAccount = k8s.core.v1.ServiceAccount(
     resource_name="airflow",
-    metadata=ObjectMetaArgs(
+    metadata=k8s.meta.v1.ObjectMetaArgs(
         name=service_account_name,
-        namespace=namespace.metadata.name,
+        namespace=airflowNamespace.metadata.name,
         annotations={"eks.amazonaws.com/role-arn": baseContainerRole.arn},
     ),
     opts=ResourceOptions(provider=cluster.provider),
 )
 
-containerRole = iam.Role(
+containerRole = aws.iam.Role(
     resource_name="container-role",
     assume_role_policy=Output.all(
-        oidc_provider.url, oidc_provider.arn, namespace.metadata.name
+        oidc_provider.url, oidc_provider.arn, airflowNamespace.metadata.name
     ).apply(get_assume_role_policy),
     description="Role for Airflow container tasks",
     name="AmazonMWAAContainerRole",
     tags=tagger.create_tags("AmazonMWAAContainerRole"),
+)
+
+fargateProfile = aws.eks.FargateProfile(
+    resource_name="airflow",
+    cluster_name=cluster.name,
+    fargate_profile_name="airflow",
+    pod_execution_role_arn=cluster.core.fargate_profile.pod_execution_role_arn,
+    selectors=[
+        aws.eks.FargateProfileSelectorArgs(namespace=airflowNamespace.metadata.name)
+    ],
+    subnet_ids=cluster.private_subnet_ids,
+    tags=tagger.create_tags("airflow"),
+    opts=ResourceOptions(parent=cluster),
 )

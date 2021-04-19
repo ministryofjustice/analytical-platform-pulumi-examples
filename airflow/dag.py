@@ -22,9 +22,10 @@ podRun = KubernetesPodOperator(
     task_id="pod-task",
     get_logs=True,
     dag=dag,
-    is_delete_operator_pod=False,
+    is_delete_operator_pod=True,
     config_file=kube_config_path,
     in_cluster=False,
     cluster_context="aws",
     service_account_name="mwaa-service-account",
+    startup_timeout_seconds=300,
 )

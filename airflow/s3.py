@@ -1,4 +1,4 @@
-from dataengineeringutils3.pulumi import Tagger
+from data_engineering_pulumi_components.utils import Tagger
 from pulumi_aws.s3 import Bucket, BucketPublicAccessBlock, BucketObject
 from pulumi import ResourceOptions, FileAsset
 from eks import cluster

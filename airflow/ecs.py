@@ -4,7 +4,7 @@ from pulumi_aws.ecs import (
     ClusterDefaultCapacityProviderStrategyArgs,
     TaskDefinition,
 )
-from dataengineeringutils3.pulumi import Tagger
+from data_engineering_pulumi_components.utils import Tagger
 
 tagger = Tagger(environment_name="dev")
 

@@ -7,7 +7,7 @@ from pulumi_aws.iam import (
     GetPolicyDocumentStatementPrincipalArgs,
 )
 from pulumi import ResourceOptions
-from dataengineeringutils3.pulumi import Tagger
+from data_engineering_pulumi_components.utils import Tagger
 
 tagger = Tagger(environment_name="dev")
 

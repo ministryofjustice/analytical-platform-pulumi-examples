@@ -1,4 +1,4 @@
-from dataengineeringutils3.pulumi import Tagger
+from data_engineering_pulumi_components.utils import Tagger
 from pulumi import ResourceOptions
 from pulumi_aws.ec2 import (
     Eip,

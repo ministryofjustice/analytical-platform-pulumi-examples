@@ -3,7 +3,7 @@ from pulumi import ResourceOptions
 from iam import executionRole
 from s3 import bucket
 from vpc import privateSubnet1, privateSubnet2, securityGroup
-from dataengineeringutils3.pulumi import Tagger
+from data_engineering_pulumi_components.utils import Tagger
 
 tagger = Tagger(environment_name="dev")
 
